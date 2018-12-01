@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+main() {
+  mark_version
+  copy_src_files
+  configure_git
+  install_apt_packages
+  install_docker_compose
+  install_rbenv
+  install_pyenv
+  install_nvm
+  install_yarn
+  install_phpbrew
+  install_composer
+  install_global_ruby
+  install_stackup
+  install_global_python
+  install_pip_packages
+  install_saw
+  install_samba
+  install_gui_packages
+  install_chrome
+  clean_apt
+  clean_up_free_space
+}
+
+mark_version() {
+  [ -z "$BOX_VERSION" ] || echo "$BOX_VERSION" > ~/box-version
+}
+
+copy_src_files() {
+  pushd /vagrant/src
+  cp -v vimrc ~/.vimrc
+  cp -v inputrc ~/.inputrc
+  cp -v screenrc ~/.screenrc
+  cp -vR install ~
+  popd
+}
+
+configure_git() {
+  git config --global core.editor "$(which vim)"
+  git config --global merge.conflictstyle diff3
+  cp -v /vagrant/src/gitignore ~/.gitignore
+  git config --global core.excludesfile ~/.gitignore
+  git config --global core.pager 'less -S'
+}
+
+install_apt_packages() {
+  sudo apt-get update
+  sudo apt-get -y install \
+    jq \
+    alpine \
+    bc \
+    openjdk-8-jdk \
+    nfs-common \
+    unzip \
+    mysql-client \
+    pv
+}
+
+clean_apt() {
+  sudo apt-get clean
+  sudo rm -Rf /var/lib/apt/lists/*
+}
+
+install_docker_compose() {
+  sudo curl -L https://github.com/docker/compose/releases/download/1.23.1/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+  sudo chmod +x /usr/local/bin/docker-compose
+}
+
+install_rbenv() {
+  sudo apt-get -y install \
+    autoconf \
+    bison \
+    build-essential \
+    libssl-dev \
+    libyaml-dev \
+    libreadline6-dev \
+    zlib1g-dev \
+    libncurses5-dev \
+    libffi-dev \
+    libgdbm3 \
+    libgdbm-dev
+  pushd ~
+  git clone https://github.com/rbenv/rbenv.git ~/.rbenv
+  echo 'export PATH="$HOME/.rbenv/bin:$PATH"' >> ~/.profile
+  echo 'eval "$(rbenv init -)"' >> ~/.profile
+  mkdir -vp ~/.rbenv/plugins
+  git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
+  popd
+  source_profile
+}
+
+source_profile() {
+  set +e
+  set +x
+  . ~/.profile
+  set -x
+  set -e
+}
+
+install_global_ruby() {
+  rbenv install 2.5.3
+  rbenv rehash
+  rbenv global 2.5.3
+}
+
+install_pyenv() {
+  git clone https://github.com/pyenv/pyenv.git ~/.pyenv
+  echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.profile
+  echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.profile
+  echo '! command -v pyenv &> /dev/null || eval "$(pyenv init -)"' >> ~/.profile
+  source_profile
+}
+
+install_nvm() {
+  curl https://raw.githubusercontent.com/creationix/nvm/v0.33.11/install.sh | bash
+}
+
+install_yarn() {
+  curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
+  echo deb https://dl.yarnpkg.com/debian/ stable main | sudo tee /etc/apt/sources.list.d/yarn.list
+  sudo apt-get update
+  sudo apt-get -y install yarn
+}
+
+install_global_python() {
+  pyenv install 2.7.15
+  pyenv global 2.7.15
+  pip install virtualenv
+}
+
+install_pip_packages() {
+  pip install awscli
+  pip install awsebcli
+}
+
+install_phpbrew() {
+  local phpbrew_executable
+
+  phpbrew_executable="$(mktemp)"
+  curl -L "-o$phpbrew_executable" https://github.com/phpbrew/phpbrew/raw/master/phpbrew
+  chmod -v +x "$phpbrew_executable"
+  sudo mv -v "$phpbrew_executable" /usr/local/bin/phpbrew
+
+  sudo apt-get -y install \
+    php7.0 \
+    php7.0-curl \
+    php7.0-json \
+    php7.0-cgi \
+    php7.0-fpm \
+    autoconf \
+    automake \
+    libxml2-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    openssl \
+    gettext \
+    libicu-dev \
+    libmcrypt-dev \
+    libmcrypt4 \
+    libbz2-dev \
+    libreadline-dev \
+    build-essential \
+    libmhash-dev \
+    libmhash2 \
+    libxslt1-dev \
+    libmagickwand-dev \
+    libmagickcore-dev \
+    libmysqlclient-dev \
+    libmysqld-dev
+
+  phpbrew init
+  echo 'export PHPBREW_RC_ENABLE=1' >> ~/.bashrc
+  echo '[ ! -e ~/.phpbrew/bashrc ] || . ~/.phpbrew/bashrc' >> ~/.bashrc
+}
+
+install_composer() {
+  local temp_path
+
+  temp_path="$(mktemp -d)"
+  pushd "$temp_path"
+  /vagrant/vendor/download-composer
+  sudo mv -v composer.phar /usr/local/bin/composer
+  popd
+  rm -vRf "$temp_path"
+}
+
+install_stackup() {
+  gem install stackup -N
+}
+
+install_saw() {
+  local temp_file
+  temp_file="$(mktemp)"
+  curl -L "-o$temp_file" https://github.com/TylerBrock/saw/releases/download/v1.2.1/saw_1.2.1_linux_amd64.deb
+  sudo dpkg -i "$temp_file"
+  rm -v "$temp_file"
+}
+
+install_samba() {
+  sudo apt-get -y install samba
+  sudo bash -c 'cat /vagrant/src/smb-section.conf >> /etc/samba/smb.conf'
+  { echo vagrant && echo vagrant; } | sudo smbpasswd -a -s vagrant
+}
+
+install_chrome() {
+  local chrome
+  chrome="$(mktemp)"
+  curl -L "-o$chrome" https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+  sudo dpkg -i "$chrome" || echo -n
+  rm -v "$chrome"
+  sudo apt-get -y -f install
+}
+
+install_gui_packages() {
+  sudo apt-get -y install \
+    firefox \
+    konsole \
+    dbus-x11 \
+    gitk \
+    fonts-arphic-ukai \
+    fonts-arphic-uming \
+    fonts-dejavu-core \
+    fonts-freefont-ttf \
+    fonts-guru \
+    fonts-guru-extra \
+    fonts-kacst \
+    fonts-kacst-one \
+    fonts-khmeros-core \
+    fonts-lao \
+    fonts-liberation \
+    fonts-lklug-sinhala \
+    fonts-lohit-guru \
+    fonts-nanum \
+    fonts-noto-cjk \
+    fonts-opensymbol \
+    fonts-sil-abyssinica \
+    fonts-sil-padauk \
+    fonts-stix \
+    fonts-symbola \
+    fonts-takao-pgothic \
+    fonts-thai-tlwg \
+    fonts-tibetan-machine \
+    fonts-tlwg-garuda \
+    fonts-tlwg-garuda-ttf \
+    fonts-tlwg-kinnari \
+    fonts-tlwg-kinnari-ttf \
+    fonts-tlwg-laksaman \
+    fonts-tlwg-laksaman-ttf \
+    fonts-tlwg-loma \
+    fonts-tlwg-loma-ttf \
+    fonts-tlwg-mono \
+    fonts-tlwg-mono-ttf \
+    fonts-tlwg-norasi \
+    fonts-tlwg-norasi-ttf \
+    fonts-tlwg-purisa \
+    fonts-tlwg-purisa-ttf \
+    fonts-tlwg-sawasdee \
+    fonts-tlwg-sawasdee-ttf \
+    fonts-tlwg-typewriter \
+    fonts-tlwg-typewriter-ttf \
+    fonts-tlwg-typist \
+    fonts-tlwg-typist-ttf \
+    fonts-tlwg-typo \
+    fonts-tlwg-typo-ttf \
+    fonts-tlwg-umpush \
+    fonts-tlwg-umpush-ttf \
+    fonts-tlwg-waree \
+    fonts-tlwg-waree-ttf \
+    ttf-ancient-fonts-symbola \
+    ttf-ubuntu-font-family
+}
+
+clean_up_free_space() {
+  local tmp_path
+  tmp_path="$(mktemp)"
+  dd if=/dev/zero of="$tmp_path" bs=1024x1024 || echo -n
+  rm -v "$tmp_path"
+}
+
+main
